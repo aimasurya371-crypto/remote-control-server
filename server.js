@@ -1,50 +1,61 @@
-const express = require('express');
+﻿const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-  maxHttpBufferSize: 500 * 1024 * 1024 // 500MB max
-});
+const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
 
-const agents = new Map();
-const admins = new Map();
+const agents = new Map();  // sessionId -> { socketId, name, machineId, socket }
+const socketToSession = new Map();  // socketId -> sessionId
+const admins = new Map();  // socketId -> { adminId, socket }
 
 function generateSessionId() {
   let id;
   do {
     const n = Math.floor(100000 + Math.random() * 900000).toString();
-    id = n.slice(0, 3) + '-' + n.slice(3);
-  } while ([...agents.values()].some(a => a.sessionId === id));
+    id = n.slice(0,3) + '-' + n.slice(3);
+  } while ([...agents.values()].find(a => a.sessionId === id));
   return id;
+}
+
+function broadcastAgentsList() {
+  const list = [...agents.values()].map(a => ({
+    socketId: a.socketId, name: a.name,
+    machineId: a.machineId, sessionId: a.sessionId
+  }));
+  for (const admin of admins.values()) {
+    admin.socket.emit('agents-list', list);
+  }
 }
 
 io.on('connection', (socket) => {
   console.log('Socket connected:', socket.id);
 
-  socket.on('register-agent', ({ machineId, name }) => {
+  socket.on('register-agent', ({ name, machineId }) => {
     const sessionId = generateSessionId();
-    agents.set(sessionId, { socketId: socket.id, name, machineId, sessionId });
-    socket.data.role = 'agent';
-    socket.data.sessionId = sessionId;
-    socket.data.name = name;
-    socket.emit('session-id', { sessionId });
-    console.log(`Agent: ${name} → Session: ${sessionId}`);
-    broadcastAgentList();
+    const agentData = { socketId: socket.id, name, machineId: machineId || 'PC', sessionId, socket };
+    agents.set(sessionId, agentData);
+    socketToSession.set(socket.id, sessionId);
+    console.log('Agent:', name, '-> Session:', sessionId);
+    socket.emit('assigned-id', { shareId: sessionId, sessionId, name });
+    broadcastAgentsList();
   });
 
   socket.on('register-admin', ({ adminId }) => {
-    admins.set(socket.id, adminId);
-    socket.data.role = 'admin';
-    socket.data.adminId = adminId;
-    socket.emit('agents-list', getAgentList());
-    console.log(`Admin registered: ${adminId}`);
+    admins.set(socket.id, { adminId, socket });
+    console.log('Admin registered:', adminId);
+    const list = [...agents.values()].map(a => ({
+      socketId: a.socketId, name: a.name,
+      machineId: a.machineId, sessionId: a.sessionId
+    }));
+    socket.emit('agents-list', list);
   });
 
   socket.on('lookup-agent', ({ sessionId }) => {
-    const agent = agents.get(sessionId.trim());
+    const agent = agents.get(sessionId);
     if (!agent) {
       socket.emit('lookup-result', { found: false, sessionId });
     } else {
@@ -58,99 +69,80 @@ io.on('connection', (socket) => {
   });
 
   socket.on('request-control', ({ agentSocketId, sessionId }) => {
-    const agent = agents.get(sessionId);
-    if (!agent || agent.socketId !== agentSocketId) {
-      socket.emit('error-msg', { message: 'Agent not found.' });
-      return;
+    const admin = admins.get(socket.id);
+    let agent = null;
+    if (agentSocketId) {
+      for (const a of agents.values()) {
+        if (a.socketId === agentSocketId) { agent = a; break; }
+      }
+    } else if (sessionId) {
+      agent = agents.get(sessionId);
     }
-    io.to(agentSocketId).emit('control-request', {
+    if (!agent) { socket.emit('error-msg', { message: 'Agent not found.' }); return; }
+    console.log('Admin', socket.id, 'requesting control of', agent.sessionId);
+    agent.socket.emit('control-request', {
       adminSocketId: socket.id,
-      adminId: socket.data.adminId || 'Admin'
+      adminId: admin ? admin.adminId : 'Admin'
     });
   });
 
   socket.on('respond-control', ({ adminSocketId, accepted }) => {
-    io.to(adminSocketId).emit('control-response', { agentSocketId: socket.id, accepted });
+    const admin = admins.get(adminSocketId);
+    if (admin) {
+      admin.socket.emit('control-response', { agentSocketId: socket.id, accepted });
+    }
   });
 
-  // ── FILE TRANSFER (no permission needed, direct send) ────────────────────
-  socket.on('file-data', ({ agentSocketId, fileName, fileType, fileData, savePath }) => {
-    console.log(`File transfer: ${fileName} → agent ${agentSocketId}`);
-    io.to(agentSocketId).emit('file-receive', { fileName, fileType, fileData, savePath });
+  socket.on('connect-by-id', ({ shareId }) => {
+    const agent = agents.get(shareId);
+    const admin = admins.get(socket.id);
+    if (!agent) { socket.emit('connect-error', { message: 'ID not found.' }); return; }
+    agent.socket.emit('control-request', {
+      adminSocketId: socket.id,
+      adminId: admin ? admin.adminId : 'Admin'
+    });
   });
 
-  socket.on('file-received', ({ adminSocketId, fileName, savedAt }) => {
-    io.to(adminSocketId).emit('file-delivered', { fileName, savedAt });
+  socket.on('signal', ({ targetSocketId, data }) => {
+    io.to(targetSocketId).emit('signal', { senderSocketId: socket.id, data });
   });
 
-  // ── FILE CHUNK TRANSFER (for large files >50MB) ──────────────────────────
-  socket.on('file-chunk-start', ({ agentSocketId, transferId, fileName, fileType, totalChunks, totalSize, savePath }) => {
-    io.to(agentSocketId).emit('file-chunk-start', { transferId, fileName, fileType, totalChunks, totalSize, savePath });
-  });
-
-  socket.on('file-chunk', ({ agentSocketId, transferId, chunkIndex, chunkData }) => {
-    io.to(agentSocketId).emit('file-chunk', { transferId, chunkIndex, chunkData });
-  });
-
-  socket.on('file-chunk-end', ({ agentSocketId, transferId, fileName }) => {
-    io.to(agentSocketId).emit('file-chunk-end', { transferId, fileName });
-  });
-
-  socket.on('file-chunk-received', ({ adminSocketId, fileName, savedAt }) => {
-    io.to(adminSocketId).emit('file-delivered', { fileName, savedAt });
-  });
-
-  // ── COMMAND EXECUTION (run any shell command on agent) ───────────────────
-  socket.on('run-command', ({ agentSocketId, command, cmdId }) => {
-    console.log(`Admin running command on agent: ${command}`);
-    io.to(agentSocketId).emit('run-command', { command, cmdId, adminSocketId: socket.id });
-  });
-
-  socket.on('command-result', ({ adminSocketId, cmdId, output, error }) => {
-    io.to(adminSocketId).emit('command-result', { cmdId, output, error });
-  });
-
-  // ── DIRECTORY LISTING ────────────────────────────────────────────────────
   socket.on('list-directory', ({ agentSocketId, dirPath }) => {
-    io.to(agentSocketId).emit('list-directory', { dirPath, adminSocketId: socket.id });
+    io.to(agentSocketId).emit('list-directory', { adminSocketId: socket.id, dirPath });
   });
 
   socket.on('directory-listing', ({ adminSocketId, dirPath, items, error }) => {
     io.to(adminSocketId).emit('directory-listing', { dirPath, items, error });
   });
 
-  // ── FILE READ FROM AGENT ─────────────────────────────────────────────────
-  socket.on('read-file', ({ agentSocketId, filePath }) => {
-    io.to(agentSocketId).emit('read-file', { filePath, adminSocketId: socket.id });
+  socket.on('run-command', ({ agentSocketId, command, cmdId }) => {
+    io.to(agentSocketId).emit('run-command', { adminSocketId: socket.id, command, cmdId });
   });
 
-  socket.on('file-read-result', ({ adminSocketId, filePath, fileData, fileType, error }) => {
-    io.to(adminSocketId).emit('file-read-result', { filePath, fileData, fileType, error });
+  socket.on('command-result', ({ adminSocketId, cmdId, output, error }) => {
+    io.to(adminSocketId).emit('command-result', { cmdId, output, error });
   });
 
-  // ── WebRTC signaling ──────────────────────────────────────────────────────
-  socket.on('signal', ({ targetSocketId, data }) => {
-    io.to(targetSocketId).emit('signal', { senderSocketId: socket.id, data });
+  socket.on('file-data', ({ agentSocketId, fileName, fileType, fileData, savePath }) => {
+    io.to(agentSocketId).emit('file-data', { fileName, fileType, fileData, savePath, adminSocketId: socket.id });
+  });
+
+  socket.on('file-delivered', ({ adminSocketId, fileName, savedAt }) => {
+    io.to(adminSocketId).emit('file-delivered', { fileName, savedAt });
   });
 
   socket.on('disconnect', () => {
-    if (socket.data.role === 'agent' && socket.data.sessionId) {
-      agents.delete(socket.data.sessionId);
-      console.log(`Agent disconnected: ${socket.data.name}`);
-      broadcastAgentList();
-    } else if (socket.data.role === 'admin') {
+    const sessionId = socketToSession.get(socket.id);
+    if (sessionId) {
+      agents.delete(sessionId);
+      socketToSession.delete(socket.id);
+      console.log('Agent disconnected:', sessionId);
+      broadcastAgentsList();
+    } else if (admins.has(socket.id)) {
       admins.delete(socket.id);
     }
   });
 });
 
-function getAgentList() {
-  return [...agents.values()].map(a => ({
-    sessionId: a.sessionId, name: a.name,
-    machineId: a.machineId, socketId: a.socketId
-  }));
-}
-
-function broadcastAgentList() { io.emit('agents-list', getAgentList()); }
-
-server.listen(3001, () => console.log('Signaling server running on port 3001'));
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => console.log('Signaling server running on port', PORT));
