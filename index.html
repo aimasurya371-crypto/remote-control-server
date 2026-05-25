@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IT Admin Console</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      --panel: rgba(30,41,59,0.7); --border: rgba(255,255,255,0.1);
+      --accent: #6366f1; --accent-h: #4f46e5;
+      --danger: #f43f5e; --danger-h: #e11d48;
+      --success: #10b981; --warning: #f59e0b;
+      --main: #f8fafc; --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+    body { background: var(--bg); color: var(--main); min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    header { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.5rem; border-bottom: 1px solid var(--border); background: rgba(15,23,42,0.6); backdrop-filter: blur(10px); }
+    header h1 { font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 700; background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .badge { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; background: rgba(255,255,255,0.05); padding: 0.3rem 0.65rem; border-radius: 9999px; border: 1px solid var(--border); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    .dot.on { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    /* Left sidebar */
+    .sidebar { width: 260px; border-right: 1px solid var(--border); background: rgba(15,23,42,0.25); display: flex; flex-direction: column; padding: 0.85rem; gap: 0.85rem; overflow-y: auto; }
+    .sec-title { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+
+    .id-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.8rem; display: flex; flex-direction: column; gap: 0.55rem; }
+    .id-row { display: flex; gap: 0.35rem; }
+    .id-input { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.6rem; color: var(--main); font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; letter-spacing: 0.1em; outline: none; }
+    .id-input:focus { border-color: var(--accent); }
+    .id-input::placeholder { color: rgba(255,255,255,0.18); }
+    .btn-sm { padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 0.78rem; border: none; transition: all 0.2s; color: white; }
+    .btn-accent  { background: var(--accent); }  .btn-accent:hover  { background: var(--accent-h); }
+    .btn-success { background: var(--success); } .btn-success:hover { background: #059669; }
+    .btn-danger  { background: var(--danger); }  .btn-danger:hover  { background: var(--danger-h); }
+    .btn-warning { background: var(--warning); color: #000; } .btn-warning:hover { background: #d97706; }
+    .btn-sm:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .lookup-result { border-radius: 8px; padding: 0.55rem 0.7rem; font-size: 0.8rem; display: none; flex-direction: column; gap: 0.3rem; }
+    .lookup-result.found    { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); }
+    .lookup-result.notfound { background: rgba(244,63,94,0.1);  border: 1px solid rgba(244,63,94,0.3); }
+
+    .online-list { display: flex; flex-direction: column; gap: 0.4rem; list-style: none; }
+    .agent-item  { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0.55rem 0.7rem; display: flex; justify-content: space-between; align-items: center; }
+    .agent-name  { font-weight: 600; font-size: 0.85rem; }
+    .agent-sid   { font-family: 'Space Grotesk', sans-serif; font-size: 0.76rem; color: #818cf8; }
+
+    /* Main area - tabs */
+    .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Top bar */
+    .top-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border); background: rgba(15,23,42,0.3); flex-wrap: wrap; }
+    .target-label { font-weight: 600; font-size: 0.88rem; }
+    .target-val { color: var(--accent); margin-left: 0.35rem; }
+    .spacer { flex: 1; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: rgba(15,23,42,0.4); }
+    .tab { padding: 0.6rem 1.1rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--muted); transition: all 0.2s; user-select: none; }
+    .tab:hover { color: var(--main); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Tab panels */
+    .tab-panels { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .tab-panel { display: none; flex: 1; overflow: hidden; flex-direction: column; }
+    .tab-panel.active { display: flex; }
+
+    /* Screen viewer */
+    .viewer-card { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative; }
+    .placeholder { color: var(--muted); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+    .placeholder-icon { font-size: 2.5rem; opacity: 0.35; }
+    video { width: 100%; height: 100%; object-fit: contain; cursor: crosshair; display: none; background: #000; }
+
+    /* File Manager */
+    .fm-area { flex: 1; display: flex; flex-direction: column; padding: 0.75rem; gap: 0.6rem; overflow: hidden; }
+    .fm-bar  { display: flex; gap: 0.5rem; align-items: center; }
+    .fm-path { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; padding: 0.45rem 0.7rem; color: var(--main); font-family: monospace; font-size: 0.82rem; outline: none; }
+    .fm-path:focus { border-color: var(--accent); }
+    .fm-list { flex: 1; overflow-y: auto; background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 8px; }
+    .fm-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.04); cursor: pointer; font-size: 0.82rem; transition: background 0.15s; }
+    .fm-item:hover { background: rgba(255,255,255,0.05); }
+    .fm-item.dir  { color: #818cf8; }
+    .fm-item.file { color: var(--main); }
+    .fm-item-icon { width: 18px; text-align: center; font-size: 0.9rem; }
+    .fm-item-name { flex: 1; }
+    .fm-item-size { color: var(--muted); font-size: 0.75rem; min-width: 60px; text-align: right; }
+    .fm-actions { display: flex; gap: 0.4rem; opacity: 0; transition: opacity 0.15s; }
+    .fm-item:hover .fm-actions { opacity: 1; }
+    .fm-send-file-section { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0; }
+    .fm-send-label { font-size: 0.82rem; color: var(--muted); }
+    #fm-file-input { display: none; }
+    .progress-wrap { background: rgba(255,255,255,0.08); border-radius: 99px; height: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--success); border-radius: 99px; width: 0%; transition: width 0.3s; }
+
+    /* Terminal */
+    .terminal-area { flex: 1; display: flex; flex-direction: column; padding: 0.75rem; gap: 0.6rem; overflow: hidden; }
+    .terminal-output { flex: 1; background: #0a0a0a; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; font-family: 'Courier New', monospace; font-size: 0.8rem; overflow-y: auto; color: #00ff41; white-space: pre-wrap; word-break: break-all; }
+    .terminal-bar { display: flex; gap: 0.5rem; align-items: center; }
+    .terminal-input { flex: 1; background: rgba(0,0,0,0.5); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; color: #00ff41; font-family: 'Courier New', monospace; font-size: 0.82rem; outline: none; }
+    .terminal-input:focus { border-color: #00ff41; }
+    .quick-cmds { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .quick-cmd { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: #818cf8; padding: 0.28rem 0.6rem; border-radius: 5px; cursor: pointer; font-size: 0.75rem; font-weight: 600; }
+    .quick-cmd:hover { background: rgba(99,102,241,0.28); }
+    .quick-cmd:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Logs */
+    .logs { height: 100px; border-top: 1px solid var(--border); background: rgba(15,23,42,0.9); padding: 0.5rem 1rem; display: flex; flex-direction: column; gap: 0.3rem; }
+    .logs-title { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.06em; }
+    .logs-body  { flex: 1; font-family: monospace; font-size: 0.76rem; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 0.3rem 0.5rem; border-radius: 5px; color: #38bdf8; }
+    .log-line   { margin-bottom: 0.12rem; }
+    .log-line.ok   { color: var(--success); }
+    .log-line.warn { color: var(--warning); }
+    .log-line.err  { color: var(--danger); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🔐 IT Admin Control Console</h1>
+  <div class="badge"><span class="dot" id="srv-dot"></span><span id="srv-text">Connecting...</span></div>
+</header>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sec-title">Connect by Session ID</div>
+    <div class="id-card">
+      <div class="id-row">
+        <input class="id-input" id="id-input" placeholder="000-000" maxlength="7" oninput="formatId(this)" onkeydown="if(event.key==='Enter') lookupAgent()">
+        <button class="btn-sm btn-accent" onclick="lookupAgent()">Find</button>
+      </div>
+      <div class="lookup-result" id="lookup-result">
+        <div id="lookup-name" style="font-weight:700;"></div>
+        <div id="lookup-sub"  style="color:var(--muted);font-size:0.76rem;"></div>
+        <button class="btn-sm btn-success" id="lookup-connect-btn" onclick="connectToFound()" style="display:none;">🔗 Connect</button>
+      </div>
+    </div>
+
+    <div class="sec-title">Online Clients</div>
+    <ul class="online-list" id="online-list">
+      <li style="color:var(--muted);font-size:0.8rem;text-align:center;margin-top:0.35rem;">No clients online</li>
+    </ul>
+  </div>
+
+  <!-- Main -->
+  <div class="main-area">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="target-label">Target:<span id="target-name" class="target-val">None</span></span>
+      <div class="spacer"></div>
+      <button class="btn-sm btn-danger" id="disc-btn" disabled onclick="cleanupSession()">Disconnect</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('screen')">🖥️ Screen</div>
+      <div class="tab"        onclick="switchTab('files')">📁 File Manager</div>
+      <div class="tab"        onclick="switchTab('terminal')">⌨️ Terminal</div>
+    </div>
+
+    <div class="tab-panels">
+
+      <!-- SCREEN TAB -->
+      <div class="tab-panel active" id="tab-screen">
+        <div class="viewer-card">
+          <div class="placeholder" id="placeholder">
+            <div class="placeholder-icon">🖥️</div>
+            <p style="font-size:0.85rem;">Enter session ID or select client to connect</p>
+          </div>
+          <video id="video" autoplay playsinline muted></video>
+        </div>
+      </div>
+
+      <!-- FILE MANAGER TAB -->
+      <div class="tab-panel" id="tab-files">
+        <div class="fm-area">
+          <div class="fm-bar">
+            <input class="fm-path" id="fm-path" value="C:\" placeholder="Enter path..." onkeydown="if(event.key==='Enter') browseDir()">
+            <button class="btn-sm btn-accent" id="fm-browse-btn" onclick="browseDir()" disabled>Browse</button>
+            <button class="btn-sm btn-accent" id="fm-up-btn" onclick="goUp()" disabled>⬆ Up</button>
+          </div>
+
+          <!-- Send file section -->
+          <div class="fm-send-file-section">
+            <span class="fm-send-label">Send file to user:</span>
+            <button class="btn-sm btn-warning" id="fm-send-btn" onclick="document.getElementById('fm-file-input').click()" disabled>📤 Choose & Send File</button>
+            <input type="file" id="fm-file-input" onchange="sendFileToAgent(this)">
+            <input class="fm-path" id="fm-save-path" placeholder="Save path on user PC (optional)" style="font-size:0.76rem;padding:0.35rem 0.6rem;">
+          </div>
+
+          <div class="progress-wrap" id="fm-progress-wrap" style="display:none;">
+            <div class="progress-fill" id="fm-progress"></div>
+          </div>
+          <div id="fm-status" style="font-size:0.78rem;color:var(--muted);"></div>
+
+          <div class="fm-list" id="fm-list">
+            <div style="color:var(--muted);text-align:center;padding:2rem;font-size:0.85rem;">Connect to an agent and click Browse to explore files</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TERMINAL TAB -->
+      <div class="tab-panel" id="tab-terminal">
+        <div class="terminal-area">
+          <div class="quick-cmds">
+            <button class="quick-cmd" id="qc-sysinfo" onclick="runQuickCmd('Get-ComputerInfo | Select-Object CsName,WindowsVersion,OsArchitecture,TotalPhysicalMemory | Format-List')" disabled>System Info</button>
+            <button class="quick-cmd" id="qc-procs"   onclick="runQuickCmd('Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 | Format-Table Name,CPU,WorkingSet -AutoSize')" disabled>Top Processes</button>
+            <button class="quick-cmd" id="qc-disk"    onclick="runQuickCmd('Get-PSDrive -PSProvider FileSystem | Format-Table Name,Used,Free,Root -AutoSize')" disabled>Disk Usage</button>
+            <button class="quick-cmd" id="qc-net"     onclick="runQuickCmd('Get-NetIPAddress | Where-Object {$_.AddressFamily -eq \"IPv4\"} | Format-Table InterfaceAlias,IPAddress -AutoSize')" disabled>Network IPs</button>
+            <button class="quick-cmd" id="qc-svc"     onclick="runQuickCmd('Get-Service | Where-Object {$_.Status -eq \"Running\"} | Format-Table Name,DisplayName -AutoSize')" disabled>Running Services</button>
+            <button class="quick-cmd" id="qc-apps"    onclick="runQuickCmd('Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | Select-Object DisplayName,DisplayVersion | Where-Object {$_.DisplayName} | Sort-Object DisplayName | Format-Table -AutoSize')" disabled>Installed Apps</button>
+            <button class="quick-cmd" id="qc-users"   onclick="runQuickCmd('Get-LocalUser | Format-Table Name,Enabled,LastLogon -AutoSize')" disabled>Local Users</button>
+            <button class="quick-cmd" id="qc-uptime"  onclick="runQuickCmd('(Get-Date) - (gcim Win32_OperatingSystem).LastBootUpTime')" disabled>Uptime</button>
+          </div>
+          <div class="terminal-output" id="terminal-output">IT Admin Terminal – Connect to an agent to begin
+──────────────────────────────────────────────
+</div>
+          <div class="terminal-bar">
+            <span style="color:#00ff41;font-family:monospace;font-size:0.82rem;">PS></span>
+            <input class="terminal-input" id="terminal-input" placeholder="Enter PowerShell command..." disabled onkeydown="if(event.key==='Enter') runCommand()">
+            <button class="btn-sm btn-success" id="run-btn" onclick="runCommand()" disabled>Run</button>
+            <button class="btn-sm" style="background:rgba(255,255,255,0.08);" onclick="clearTerminal()">Clear</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="logs">
+  <div class="logs-title">System Log</div>
+  <div class="logs-body" id="logs"><div class="log-line">[System] IT Admin Console initializing...</div></div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  const SERVER = window.location.origin;
+  let socket, pc, dc;
+  let activeAgentSocketId = null;
+  let sessionActive = false;
+  let foundAgentSocketId = null, foundSessionId = null, foundAgentName = null;
+  let currentDirPath = 'C:\\';
+  let cmdCounter = 0;
+  const CHUNK_SIZE = 2 * 1024 * 1024;
+  const adminId = 'Admin-' + Math.floor(Math.random() * 1000);
+
+  function log(msg, type='') {
+    const d = document.createElement('div');
+    d.className = 'log-line ' + type;
+    d.innerText = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+    const el = document.getElementById('logs');
+    el.appendChild(d); el.scrollTop = el.scrollHeight;
+  }
+
+  function formatBytes(b) {
+    if (!b) return '–';
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+    return (b/1073741824).toFixed(1) + ' GB';
+  }
+
+  function formatId(el) {
+    let v = el.value.replace(/[^0-9]/g, '');
+    if (v.length > 3) v = v.slice(0,3) + '-' + v.slice(3,6);
+    el.value = v;
+    document.getElementById('lookup-result').style.display = 'none';
+    foundAgentSocketId = null;
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t,i) => {
+      const names = ['screen','files','terminal'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab-' + name);
+    });
+  }
+
+  function setControlsEnabled(enabled) {
+    ['fm-browse-btn','fm-up-btn','fm-send-btn','run-btn','terminal-input',
+     'qc-sysinfo','qc-procs','qc-disk','qc-net','qc-svc','qc-apps','qc-users','qc-uptime']
+      .forEach(id => { const el = document.getElementById(id); if(el) el.disabled = !enabled; });
+  }
+
+  function init() {
+    socket = io(SERVER);
+
+    socket.on('connect', () => {
+      log('Connected as ' + adminId, 'ok');
+      document.getElementById('srv-dot').className = 'dot on';
+      document.getElementById('srv-text').innerText = 'Connected';
+      socket.emit('register-admin', { adminId });
+    });
+
+    socket.on('disconnect', () => {
+      log('Disconnected from server.', 'warn');
+      document.getElementById('srv-dot').className = 'dot';
+      document.getElementById('srv-text').innerText = 'Disconnected';
+    });
+
+    socket.on('agents-list', agents => {
+      log('Agents online: ' + agents.length);
+      renderOnlineList(agents);
+    });
+
+    socket.on('lookup-result', ({ found, sessionId, agentSocketId, agentName, machineId }) => {
+      const res = document.getElementById('lookup-result');
+      if (!found) {
+        res.className = 'lookup-result notfound'; res.style.display = 'flex';
+        document.getElementById('lookup-name').innerText = '✕ Not found';
+        document.getElementById('lookup-sub').innerText  = 'Check the ID';
+        document.getElementById('lookup-connect-btn').style.display = 'none';
+        foundAgentSocketId = null;
+      } else {
+        res.className = 'lookup-result found'; res.style.display = 'flex';
+        document.getElementById('lookup-name').innerText = agentName + ' – ' + machineId;
+        document.getElementById('lookup-sub').innerText  = 'Session: ' + sessionId;
+        document.getElementById('lookup-connect-btn').style.display = 'block';
+        foundAgentSocketId = agentSocketId; foundSessionId = sessionId; foundAgentName = agentName;
+      }
+    });
+
+    socket.on('control-response', ({ agentSocketId, accepted }) => {
+      if (!accepted) { log('Request DECLINED.', 'err'); alert('Declined by user.'); cleanupSession(); return; }
+      if (sessionActive) return;
+      log('ACCEPTED – starting WebRTC...', 'ok');
+      startWebRTC(agentSocketId);
+    });
+
+    socket.on('signal', async ({ senderSocketId, data }) => {
+      if (senderSocketId !== activeAgentSocketId || !pc) return;
+      try {
+        if (data.sdp) await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        else if (data.candidate) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      } catch(e) { log('Signal error: ' + e.message, 'err'); }
+    });
+
+    socket.on('file-delivered', ({ fileName, savedAt }) => {
+      log('✅ File delivered: ' + fileName + ' → ' + savedAt, 'ok');
+      document.getElementById('fm-status').innerText = '✅ Delivered: ' + savedAt;
+      document.getElementById('fm-progress').style.width = '100%';
+      setTimeout(() => {
+        document.getElementById('fm-progress-wrap').style.display = 'none';
+        document.getElementById('fm-progress').style.width = '0%';
+      }, 2000);
+    });
+
+    socket.on('directory-listing', ({ dirPath, items, error }) => {
+      if (error) { log('Dir error: ' + error, 'err'); return; }
+      currentDirPath = dirPath;
+      document.getElementById('fm-path').value = dirPath;
+      renderFileList(items, dirPath);
+    });
+
+    socket.on('command-result', ({ cmdId, output, error }) => {
+      const out = document.getElementById('terminal-output');
+      if (error) {
+        out.innerText += '\n[ERROR] ' + error + '\n';
+        log('Command error', 'err');
+      } else {
+        out.innerText += '\n' + (output || '(no output)') + '\n';
+        log('Command completed', 'ok');
+      }
+      out.scrollTop = out.scrollHeight;
+    });
+
+    socket.on('error-msg', ({ message }) => log('Error: ' + message, 'err'));
+  }
+
+  function renderOnlineList(agents) {
+    const list = document.getElementById('online-list');
+    list.innerHTML = '';
+    if (!agents.length) {
+      list.innerHTML = '<li style="color:var(--muted);font-size:0.8rem;text-align:center;margin-top:0.35rem;">No clients online</li>';
+      return;
+    }
+    agents.forEach(a => {
+      const li = document.createElement('li'); li.className = 'agent-item';
+      li.innerHTML = `<div><div class="agent-name">${a.name}</div><div class="agent-sid">${a.sessionId}</div></div>
+        <button class="btn-sm btn-accent" ${sessionActive?'disabled':''} onclick="quickConnect('${a.socketId}','${a.sessionId}','${a.name}')">Connect</button>`;
+      list.appendChild(li);
+    });
+  }
+
+  function lookupAgent() {
+    const id = document.getElementById('id-input').value.trim();
+    if (id.length < 7) return;
+    socket.emit('lookup-agent', { sessionId: id });
+  }
+
+  function connectToFound() { if (foundAgentSocketId) sendControlRequest(foundAgentSocketId, foundSessionId, foundAgentName); }
+  function quickConnect(sid, sessId, name) { sendControlRequest(sid, sessId, name); }
+
+  function sendControlRequest(agentSocketId, sessionId, name) {
+    if (sessionActive) return;
+    activeAgentSocketId = agentSocketId;
+    document.getElementById('target-name').innerText = ' ' + name + ' (' + sessionId + ')';
+    document.getElementById('disc-btn').disabled = false;
+    log('Requesting control of ' + name + '...');
+    socket.emit('request-control', { agentSocketId, sessionId });
+  }
+
+  async function startWebRTC(agentSocketId) {
+    sessionActive = true;
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] });
+
+    pc.ontrack = (e) => {
+      log('Video stream received!', 'ok');
+      const stream = e.streams[0] || new MediaStream([e.track]);
+      const vid = document.getElementById('video');
+      vid.srcObject = stream; vid.style.display = 'block';
+      document.getElementById('placeholder').style.display = 'none';
+      vid.play().catch(e => log('Play error: ' + e.message, 'err'));
+      setControlsEnabled(true);
+    };
+
+    pc.onicecandidate = e => { if (e.candidate) socket.emit('signal', { targetSocketId: agentSocketId, data: { candidate: e.candidate } }); };
+    pc.onconnectionstatechange = () => { log('WebRTC: ' + pc.connectionState); if (pc.connectionState === 'failed') cleanupSession(); };
+
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    dc = pc.createDataChannel('control', { ordered: true });
+    dc.onopen  = () => log('Input control ACTIVE', 'ok');
+    dc.onclose = () => log('DataChannel closed.');
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('signal', { targetSocketId: agentSocketId, data: { sdp: offer } });
+  }
+
+  function browseDir() {
+    if (!sessionActive) return;
+    const p = document.getElementById('fm-path').value.trim() || 'C:\\';
+    socket.emit('list-directory', { agentSocketId: activeAgentSocketId, dirPath: p });
+  }
+
+  function goUp() {
+    const parts = currentDirPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    if (parts.length <= 1) { browseToPath('C:\\'); return; }
+    parts.pop();
+    browseToPath(parts.join('\\') + '\\');
+  }
+
+  function browseToPath(p) {
+    document.getElementById('fm-path').value = p;
+    socket.emit('list-directory', { agentSocketId: activeAgentSocketId, dirPath: p });
+  }
+
+  function renderFileList(items, dirPath) {
+    const list = document.getElementById('fm-list');
+    list.innerHTML = '';
+    if (!items.length) {
+      list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:1.5rem;font-size:0.82rem;">Empty folder</div>';
+      return;
+    }
+    items.sort((a,b) => b.isDirectory - a.isDirectory || a.name.localeCompare(b.name));
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'fm-item ' + (item.isDirectory ? 'dir' : 'file');
+      row.innerHTML = `
+        <span class="fm-item-icon">${item.isDirectory ? '📁' : '📄'}</span>
+        <span class="fm-item-name">${item.name}</span>
+        <span class="fm-item-size">${item.isDirectory ? '' : formatBytes(item.size)}</span>
+        <div class="fm-actions">
+          ${item.isDirectory ? '' : `<button class="btn-sm btn-accent" style="font-size:0.7rem;padding:0.22rem 0.5rem;" onclick="downloadFromAgent('${item.path.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}','${item.name.replace(/'/g,"\\'")}')">⬇ Download</button>`}
+        </div>`;
+      if (item.isDirectory) {
+        row.ondblclick = () => browseToPath(item.path + '\\');
+        row.onclick    = () => browseToPath(item.path + '\\');
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function sendFileToAgent(input) {
+    const file = input.files[0];
+    if (!file || !sessionActive) return;
+    const savePath = document.getElementById('fm-save-path').value.trim() || '';
+    const targetPath = savePath || currentDirPath + file.name;
+
+    log('📤 Sending ' + file.name + ' (' + formatBytes(file.size) + ') → ' + targetPath);
+    document.getElementById('fm-status').innerText = 'Sending ' + file.name + '...';
+    document.getElementById('fm-progress-wrap').style.display = 'block';
+    document.getElementById('fm-progress').style.width = '5%';
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64Full = e.target.result.split(',')[1];
+
+      if (file.size <= 10 * 1024 * 1024) {
+        socket.emit('file-data', {
+          agentSocketId: activeAgentSocketId,
+          fileName: file.name, fileType: file.type,
+          fileData: base64Full, savePath: targetPath
+        });
+        document.getElementById('fm-progress').style.width = '90%';
+      } else {
+        const transferId = 'tf-' + Date.now();
+        const raw = Uint8Array.from(atob(base64Full), c => c.charCodeAt(0));
+        const totalChunks = Math.ceil(raw.length / CHUNK_SIZE);
+
+        log('Large file: sending in ' + totalChunks + ' chunks...');
+        socket.emit('file-chunk-start', {
+          agentSocketId: activeAgentSocketId,
+          transferId, fileName: file.name, fileType: file.type,
+          totalChunks, totalSize: file.size, savePath: targetPath
+        });
+
+        for (let i = 0; i < totalChunks; i++) {
+          const slice = raw.slice(i * CHUNK_SIZE, (i+1) * CHUNK_SIZE);
+          const chunkBase64 = btoa(String.fromCharCode(...slice));
+          socket.emit('file-chunk', { agentSocketId: activeAgentSocketId, transferId, chunkIndex: i, chunkData: chunkBase64 });
+          const pct = Math.round(((i+1) / totalChunks) * 85);
+          document.getElementById('fm-progress').style.width = pct + '%';
+          await new Promise(r => setTimeout(r, 20));
+        }
+
+        socket.emit('file-chunk-end', { agentSocketId: activeAgentSocketId, transferId, fileName: file.name });
+      }
+    };
+    reader.readAsDataURL(file);
+    input.value = '';
+  }
+
+  function downloadFromAgent(filePath, fileName) {
+    if (!sessionActive) return;
+    log('⬇ Downloading from agent: ' + fileName);
+    socket.once('file-read-result', ({ filePath: fp, fileData, error }) => {
+      if (error) { log('Read error: ' + error, 'err'); return; }
+      const bytes  = atob(fileData);
+      const arr    = new Uint8Array(bytes.length);
+      for (let i=0; i<bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob   = new Blob([arr]);
+      const url    = URL.createObjectURL(blob);
+      const a      = document.createElement('a');
+      a.href = url; a.download = fileName; a.click();
+      URL.revokeObjectURL(url);
+      log('✅ Downloaded: ' + fileName, 'ok');
+    });
+    socket.emit('read-file', { agentSocketId: activeAgentSocketId, filePath });
+  }
+
+  function runCommand() {
+    const input = document.getElementById('terminal-input');
+    const cmd   = input.value.trim();
+    if (!cmd || !sessionActive) return;
+    const cmdId = 'cmd-' + (++cmdCounter);
+    const out   = document.getElementById('terminal-output');
+    out.innerText += '\nPS> ' + cmd + '\n';
+    out.scrollTop = out.scrollHeight;
+    socket.emit('run-command', { agentSocketId: activeAgentSocketId, command: cmd, cmdId });
+    log('Running: ' + cmd);
+    input.value = '';
+  }
+
+  function runQuickCmd(cmd) {
+    if (!sessionActive) return;
+    document.getElementById('terminal-input').value = cmd;
+    switchTab('terminal');
+    runCommand();
+  }
+
+  function clearTerminal() {
+    document.getElementById('terminal-output').innerText = 'IT Admin Terminal\n──────────────────────────────────────────────\n';
+  }
+
+  function sendInput(p) { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(p)); }
+  const vid = document.getElementById('video');
+  vid.addEventListener('mousemove', e => { const r=vid.getBoundingClientRect(); sendInput({type:'mousemove',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}); });
+  vid.addEventListener('mousedown', e => { const r=vid.getBoundingClientRect(); sendInput({type:'mousedown',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,button:e.button===2?'right':e.button===1?'middle':'left'}); });
+  vid.addEventListener('mouseup',   e => { const r=vid.getBoundingClientRect(); sendInput({type:'mouseup',  x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,button:e.button===2?'right':e.button===1?'middle':'left'}); });
+  vid.addEventListener('wheel', e => { e.preventDefault(); sendInput({type:'wheel',deltaX:e.deltaX,deltaY:e.deltaY}); }, {passive:false});
+  vid.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('keydown', e => {
+    if (!activeAgentSocketId || !vid.srcObject) return;
+    if (['Tab','Backspace','ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    sendInput({type:'keydown',key:e.key,code:e.code,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey});
+  });
+  window.addEventListener('keyup', e => {
+    if (!activeAgentSocketId || !vid.srcObject) return;
+    sendInput({type:'keyup',key:e.key,code:e.code,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey});
+  });
+
+  function cleanupSession() {
+    log('Session ended.');
+    sessionActive = false;
+    if (pc) { pc.close(); pc = null; } dc = null;
+    activeAgentSocketId = null;
+    document.getElementById('target-name').innerText = 'None';
+    document.getElementById('disc-btn').disabled = true;
+    vid.style.display = 'none'; vid.srcObject = null;
+    document.getElementById('placeholder').style.display = 'flex';
+    setControlsEnabled(false);
+  }
+
+  window.onload = init;
+</script>
+</body>
+</html>
