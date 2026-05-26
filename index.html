@@ -573,11 +573,45 @@
     document.getElementById('terminal-output').innerText = 'IT Admin Terminal\n──────────────────────────────────────────────\n';
   }
 
-  function sendInput(p) { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(p)); }
+  function sendInput(p) {
+    if (!sessionActive || !activeAgentSocketId) return;
+    if (dc && dc.readyState === 'open') {
+      dc.send(JSON.stringify(p));
+      return;
+    }
+    socket.emit('remote-input', { agentSocketId: activeAgentSocketId, input: p });
+  }
   const vid = document.getElementById('video');
-  vid.addEventListener('mousemove', e => { const r=vid.getBoundingClientRect(); sendInput({type:'mousemove',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}); });
-  vid.addEventListener('mousedown', e => { const r=vid.getBoundingClientRect(); sendInput({type:'mousedown',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,button:e.button===2?'right':e.button===1?'middle':'left'}); });
-  vid.addEventListener('mouseup',   e => { const r=vid.getBoundingClientRect(); sendInput({type:'mouseup',  x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,button:e.button===2?'right':e.button===1?'middle':'left'}); });
+  vid.tabIndex = 0;
+  function getVideoPoint(e) {
+    const r = vid.getBoundingClientRect();
+    const videoRatio = vid.videoWidth && vid.videoHeight ? vid.videoWidth / vid.videoHeight : r.width / r.height;
+    const boxRatio = r.width / r.height;
+    let left = r.left, top = r.top, width = r.width, height = r.height;
+    if (videoRatio > boxRatio) {
+      height = r.width / videoRatio;
+      top += (r.height - height) / 2;
+    } else {
+      width = r.height * videoRatio;
+      left += (r.width - width) / 2;
+    }
+    const x = (e.clientX - left) / width;
+    const y = (e.clientY - top) / height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  }
+  vid.addEventListener('mousemove', e => { const p=getVideoPoint(e); if(p) sendInput({type:'mousemove',x:p.x,y:p.y}); });
+  vid.addEventListener('mousedown', e => {
+    e.preventDefault();
+    vid.focus();
+    const p=getVideoPoint(e);
+    if(p) sendInput({type:'mousedown',x:p.x,y:p.y,button:e.button===2?'right':e.button===1?'middle':'left'});
+  });
+  vid.addEventListener('mouseup', e => {
+    e.preventDefault();
+    const p=getVideoPoint(e);
+    if(p) sendInput({type:'mouseup',x:p.x,y:p.y,button:e.button===2?'right':e.button===1?'middle':'left'});
+  });
   vid.addEventListener('wheel', e => { e.preventDefault(); sendInput({type:'wheel',deltaX:e.deltaX,deltaY:e.deltaY}); }, {passive:false});
   vid.addEventListener('contextmenu', e => e.preventDefault());
   window.addEventListener('keydown', e => {

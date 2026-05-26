@@ -43,7 +43,9 @@ io.on('connection', (socket) => {
     agents.set(sessionId, agentData);
     socketToSession.set(socket.id, sessionId);
     console.log('Agent:', name, '-> Session:', sessionId);
-    socket.emit('assigned-id', { shareId: sessionId, sessionId, name });
+    const assignment = { shareId: sessionId, sessionId, name };
+    socket.emit('assigned-id', assignment);
+    socket.emit('session-id', assignment);
     broadcastAgentsList();
   });
 
@@ -58,12 +60,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('lookup-agent', ({ sessionId }) => {
-    const agent = agents.get(sessionId);
+    const cleanSessionId = String(sessionId || '').trim();
+    const agent = agents.get(cleanSessionId);
     if (!agent) {
-      socket.emit('lookup-result', { found: false, sessionId });
+      socket.emit('lookup-result', { found: false, sessionId: cleanSessionId });
     } else {
       socket.emit('lookup-result', {
-        found: true, sessionId,
+        found: true, sessionId: cleanSessionId,
         agentSocketId: agent.socketId,
         agentName: agent.name,
         machineId: agent.machineId
@@ -110,6 +113,11 @@ io.on('connection', (socket) => {
     io.to(targetSocketId).emit('signal', { senderSocketId: socket.id, data });
   });
 
+  socket.on('remote-input', ({ agentSocketId, input }) => {
+    if (!agentSocketId || !input) return;
+    io.to(agentSocketId).emit('remote-input', { adminSocketId: socket.id, input });
+  });
+
   socket.on('list-directory', ({ agentSocketId, dirPath }) => {
     io.to(agentSocketId).emit('list-directory', { adminSocketId: socket.id, dirPath });
   });
@@ -127,7 +135,23 @@ io.on('connection', (socket) => {
   });
 
   socket.on('file-data', ({ agentSocketId, fileName, fileType, fileData, savePath }) => {
-    io.to(agentSocketId).emit('file-data', { fileName, fileType, fileData, savePath, adminSocketId: socket.id });
+    io.to(agentSocketId).emit('file-receive', { fileName, fileType, fileData, savePath, adminSocketId: socket.id });
+  });
+
+  socket.on('file-chunk-start', ({ agentSocketId, transferId, fileName, fileType, totalChunks, totalSize, savePath }) => {
+    io.to(agentSocketId).emit('file-chunk-start', { transferId, fileName, fileType, totalChunks, totalSize, savePath, adminSocketId: socket.id });
+  });
+
+  socket.on('file-chunk', ({ agentSocketId, transferId, chunkIndex, chunkData }) => {
+    io.to(agentSocketId).emit('file-chunk', { transferId, chunkIndex, chunkData });
+  });
+
+  socket.on('file-chunk-end', ({ agentSocketId, transferId, fileName }) => {
+    io.to(agentSocketId).emit('file-chunk-end', { transferId, fileName });
+  });
+
+  socket.on('file-chunk-received', ({ adminSocketId, fileName, savedAt }) => {
+    io.to(adminSocketId).emit('file-delivered', { fileName, savedAt });
   });
 
   socket.on('file-delivered', ({ adminSocketId, fileName, savedAt }) => {
